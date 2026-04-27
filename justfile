@@ -9,3 +9,6 @@ test:
 
 clean:
     rm -rf bin/
+
+get:
+    go get ./...

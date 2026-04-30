@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"strings"
+	"regexp"
 )
 
 type Options struct {
@@ -12,6 +12,7 @@ type Options struct {
 	ShowLineNumbers       bool
 	PrintCountPerFile     bool
 	PrintFilesWithMatches bool
+	UseFixedStrings       bool
 }
 
 type Match struct {
@@ -26,33 +27,46 @@ func (m Match) Format(showLineNumbers bool) string {
 	return m.Line
 }
 
-func SearchFile(path, pattern string, opts Options) ([]Match, error) {
+type Result struct {
+	Matches  []Match
+	Count    int
+	HasMatch bool
+}
+
+func Search(path, pattern string, opts Options) (Result, error) {
 	// open file from file path and handle error
 	file, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return Result{}, err
 	}
 	// close file after function runs
 	defer file.Close()
 
+	// escape all regexp metacharacters when -F is passed
+	if opts.UseFixedStrings {
+		pattern = regexp.QuoteMeta(pattern)
+	}
+	// prefix pattern with regexp for case-insensitive matching
+	if opts.IgnoreCase {
+		pattern = "(?i)" + pattern
+	}
+	// compile pattern into regexp object
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return Result{}, fmt.Errorf("invalid pattern: %w", err)
+	}
+
+	// create scanner
 	scanner := bufio.NewScanner(file)
 
 	lineNumber := 0
 	var matches []Match
 
-	// scan the file, and return the lines that match the pattern
+	// scan the file, and get matches if any
 	for scanner.Scan() {
 		lineNumber++
 
-		var patternMatches bool
-		// lower cases if opts.IgnoreCase is true
-		if opts.IgnoreCase {
-			patternMatches = strings.Contains(strings.ToLower(scanner.Text()), strings.ToLower(pattern))
-		} else {
-			patternMatches = strings.Contains(scanner.Text(), pattern)
-		}
-
-		if patternMatches {
+		if re.MatchString(scanner.Text()) {
 			matches = append(matches, Match{
 				LineNumber: lineNumber,
 				Line:       scanner.Text(),
@@ -61,26 +75,12 @@ func SearchFile(path, pattern string, opts Options) ([]Match, error) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, err
+		return Result{}, err
 	}
 
-	return matches, nil
-}
-
-func SearchFileForMatchCount(path, pattern string, opts Options) (string, error) {
-	matches, err := SearchFile(path, pattern, opts)
-	if err != nil {
-		return "", err
-	}
-
-	return fmt.Sprintf("%d", len(matches)), nil
-}
-
-func SearchFileForMatches(path, pattern string, opts Options) (bool, error) {
-	matches, err := SearchFile(path, pattern, opts)
-	if err != nil {
-		return false, err
-	}
-
-	return len(matches) > 0, nil
+	return Result{
+		Matches:  matches,
+		Count:    len(matches),
+		HasMatch: len(matches) > 0,
+	}, nil
 }

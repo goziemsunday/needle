@@ -14,15 +14,14 @@ func main() {
 	showLineNumbers := flag.Bool("n", false, "print line number with output lines")
 	printCountPerFIle := flag.Bool("c", false, "print only a count of matching lines per file")
 	printFilesWithMatches := flag.Bool("l", false, "print only filenames with matches")
+	useFixedStrings := flag.Bool("F", false, "use patterns as strings instead of regular expressions")
 	// parse the command line into the defined flags
 	flag.Parse()
 
-	// accept positional args
 	if len(flag.Args()) < 2 {
 		fmt.Fprintln(os.Stderr, "Need two parameters: pattern and file path")
 		os.Exit(1)
 	}
-	// extract args pattern and file path
 	pattern, path := flag.Arg(0), flag.Arg(1)
 
 	// define opts from flags
@@ -31,40 +30,34 @@ func main() {
 		ShowLineNumbers:       *showLineNumbers,
 		PrintCountPerFile:     *printCountPerFIle,
 		PrintFilesWithMatches: *printFilesWithMatches,
+		UseFixedStrings:       *useFixedStrings,
+	}
+
+	// perform search
+	result, err := search.Search(path, pattern, opts)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
 
 	if opts.PrintFilesWithMatches {
-		fileHasMatch, err := search.SearchFileForMatches(path, pattern, opts)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-
-		if fileHasMatch {
+		if result.HasMatch {
 			fmt.Println(path)
+		} else {
+			os.Exit(1)
 		}
 	} else if opts.PrintCountPerFile {
-		output, err := search.SearchFileForMatchCount(path, pattern, opts)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
+		fmt.Printf("%d\n", result.Count)
+		if !result.HasMatch {
 			os.Exit(1)
 		}
-
-		fmt.Println(output)
 	} else {
-		matches, err := search.SearchFile(path, pattern, opts)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-
 		// if there are no matches (and no errors) exit program
-		if len(matches) == 0 {
+		if !result.HasMatch {
 			os.Exit(1)
 		}
-
 		// print matches to os.Stdout
-		for _, m := range matches {
+		for _, m := range result.Matches {
 			fmt.Println(m.Format(opts.ShowLineNumbers))
 		}
 	}

@@ -18,11 +18,15 @@ func main() {
 	// parse the command line into the defined flags
 	flag.Parse()
 
-	if len(flag.Args()) < 2 {
-		fmt.Fprintln(os.Stderr, "Need two parameters: pattern and file path")
+	// show usage & help message if no pattern is passed
+	if len(flag.Args()) == 0 {
+		fmt.Fprintln(os.Stderr, "Usage: needle [OPTION]... PATTERNS [FILE]...")
+		fmt.Println("Try 'needle --help' for more information.")
 		os.Exit(1)
 	}
-	pattern, path := flag.Arg(0), flag.Arg(1)
+
+	// get pattern and paths, if given
+	pattern, paths := flag.Arg(0), flag.Args()[1:]
 
 	// define opts from flags
 	opts := search.Options{
@@ -33,32 +37,60 @@ func main() {
 		UseFixedStrings:       *useFixedStrings,
 	}
 
-	// perform search
-	result, err := search.Search(path, pattern, opts)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+	// Stdin mode
+	if len(paths) == 0 {
+		hasMatch, err := search.SearchStdin(pattern, opts)
+
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		if !hasMatch {
+			os.Exit(1)
+		}
+
+		return
+	}
+
+	// file mode
+	multipleFiles := len(paths) > 1
+	hasAnyMatch := false
+
+	for _, p := range paths {
+		result, err := search.SearchFile(p, pattern, opts)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+
+		if result.HasMatch {
+			hasAnyMatch = true
+		}
+
+		if opts.PrintFilesWithMatches {
+			if result.HasMatch {
+				fmt.Println(p)
+			}
+		} else if opts.PrintCountPerFile {
+			if multipleFiles {
+				fmt.Printf("%s:%d\n", p, result.Count)
+			} else {
+				fmt.Println(result.Count)
+			}
+		} else {
+			for _, m := range result.Matches {
+				if multipleFiles {
+					fmt.Printf("%s:%s\n", p, m.Format(opts.ShowLineNumbers))
+				} else {
+					fmt.Println(m.Format(opts.ShowLineNumbers))
+				}
+			}
+		}
+	}
+
+	// if no file matches the pattern, exit the program with code 1
+	if !hasAnyMatch {
 		os.Exit(1)
 	}
 
-	if opts.PrintFilesWithMatches {
-		if result.HasMatch {
-			fmt.Println(path)
-		} else {
-			os.Exit(1)
-		}
-	} else if opts.PrintCountPerFile {
-		fmt.Printf("%d\n", result.Count)
-		if !result.HasMatch {
-			os.Exit(1)
-		}
-	} else {
-		// if there are no matches (and no errors) exit program
-		if !result.HasMatch {
-			os.Exit(1)
-		}
-		// print matches to os.Stdout
-		for _, m := range result.Matches {
-			fmt.Println(m.Format(opts.ShowLineNumbers))
-		}
-	}
 }

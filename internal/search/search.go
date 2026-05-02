@@ -80,7 +80,22 @@ func SearchFile(path, pattern string, opts Options) (Result, error) {
 	// close file after function runs
 	defer file.Close()
 
-	return Search(file, pattern, opts)
+	// read first 512 bytes to check for binary
+	buf := make([]byte, 512)
+	n, err := file.Read(buf)
+	if err != nil && err != io.EOF {
+		return Result{}, err
+	}
+
+	if bytes.IndexByte(buf[:n], 0) != -1 {
+		// binary file, return empty result quietly
+		return Result{}, nil
+	}
+
+	// stitch the already-read bytes with the rest of the file
+	r := io.MultiReader(bytes.NewReader(buf[:n]), file)
+
+	return Search(r, path, pattern, opts)
 }
 
 func Search(r io.Reader, pattern string, opts Options) (Result, error) {

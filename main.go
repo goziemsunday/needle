@@ -8,6 +8,7 @@ import (
 	"github.com/chiagxziem/needle/internal/search"
 	"github.com/fatih/color"
 	"github.com/spf13/pflag"
+	"golang.org/x/term"
 )
 
 var (
@@ -61,6 +62,11 @@ func main() {
 		NoColor:               *noColor,
 	}
 
+	// enable no-color mode if stdout is not a terminal
+	if *noColor || !term.IsTerminal(int(os.Stdout.Fd())) {
+		color.NoColor = true
+	}
+
 	hasAnyMatch := false
 
 	// recursive mode
@@ -100,7 +106,7 @@ func main() {
 		result, err := search.SearchStdin(pattern, opts, func(m search.Match, r *regexp.Regexp) bool {
 			// handle -l immediately is passed
 			if opts.PrintFilesWithMatches {
-				fmt.Println(colorize("(standard input)", magenta, opts.NoColor))
+				fmt.Println(magenta("(standard input)"))
 				return false
 			}
 			// if there's no -c, handle normally
@@ -151,33 +157,23 @@ func main() {
 }
 
 func getOutput(r search.Result, opts search.Options, multipleFiles bool) {
-	path := colorize(r.Path, magenta, opts.NoColor)
-	separator := colorize(":", magenta, opts.NoColor)
-
 	if opts.PrintFilesWithMatches {
 		if r.HasMatch {
-			fmt.Println(path)
+			fmt.Println(magenta(r.Path))
 		}
 	} else if opts.PrintCountPerFile {
 		if multipleFiles {
-			fmt.Printf("%s%s%d\n", path, separator, r.Count)
+			fmt.Printf("%s%s%d\n", magenta(r.Path), magenta(":"), r.Count)
 		} else {
 			fmt.Println(r.Count)
 		}
 	} else {
 		for _, m := range r.Matches {
 			if multipleFiles {
-				fmt.Printf("%s%s%s\n", path, separator, m.Format(r.RegexpPattern, formatter, opts))
+				fmt.Printf("%s%s%s\n", magenta(r.Path), magenta(":"), m.Format(r.RegexpPattern, formatter, opts))
 			} else {
 				fmt.Println(m.Format(r.RegexpPattern, formatter, opts))
 			}
 		}
 	}
-}
-
-func colorize(s string, f func(a ...any) string, noColor bool) string {
-	if noColor {
-		return s
-	}
-	return f(s)
 }

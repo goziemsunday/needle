@@ -11,22 +11,28 @@ import (
 )
 
 var (
-	magenta = color.New(color.FgMagenta).SprintFunc()
-	green   = color.New(color.FgGreen).SprintFunc()
-	red     = color.New(color.FgRed, color.Bold).SprintFunc()
+	magenta   = color.New(color.FgMagenta).SprintFunc()
+	green     = color.New(color.FgGreen).SprintFunc()
+	red       = color.New(color.FgRed, color.Bold).SprintFunc()
+	formatter = search.Formatter{
+		Highlight: red,
+		LineNum:   green,
+		Sep:       magenta,
+	}
 )
 
 func main() {
 	// flags
 	ignoreCase := pflag.BoolP("ignore-case", "i", false, "ignore case distinctions in patterns")
 	showLineNumbers := pflag.BoolP("line-number", "n", false, "print line number with output lines")
-	printCountPerFIle := pflag.BoolP("count", "c", false, "print only a count of matching lines per file")
+	printCountPerFile := pflag.BoolP("count", "c", false, "print only a count of matching lines per file")
 	printFilesWithMatches := pflag.BoolP("files-with-matches", "l", false, "print only names of files with matches")
 	recursiveSearch := pflag.BoolP("recursive", "r", false, "search files & directories recursively")
 	useFixedStrings := pflag.BoolP("fixed-strings", "F", false, "use patterns as strings instead of regular expressions")
 	include := pflag.String("include", "", "search only files matching glob e.g. '*.go'")
 	exclude := pflag.String("exclude", "", "skip files that match glob e.g. '*.go'")
 	excludeDir := pflag.String("exclude-dir", "", "skip directories matching glob e.g. 'vendor'")
+	noColor := pflag.Bool("no-color", false, "never highlight the matching strings")
 
 	// parse the command line into the defined flags
 	pflag.Parse()
@@ -45,13 +51,14 @@ func main() {
 	opts := search.Options{
 		IgnoreCase:            *ignoreCase,
 		ShowLineNumbers:       *showLineNumbers,
-		PrintCountPerFile:     *printCountPerFIle,
+		PrintCountPerFile:     *printCountPerFile,
 		PrintFilesWithMatches: *printFilesWithMatches,
 		UseFixedStrings:       *useFixedStrings,
 		RecursiveSearch:       *recursiveSearch,
 		Include:               *include,
 		Exclude:               *exclude,
 		ExcludeDir:            *excludeDir,
+		NoColor:               *noColor,
 	}
 
 	hasAnyMatch := false
@@ -90,21 +97,15 @@ func main() {
 
 	// Stdin mode
 	if len(paths) == 0 {
-		formatter := search.Formatter{
-			Highlight: func(s string) string { return red(s) },
-			LineNum:   func(s string) string { return green(s) },
-			Sep:       func(s string) string { return magenta(s) },
-		}
-
 		result, err := search.SearchStdin(pattern, opts, func(m search.Match, r *regexp.Regexp) bool {
 			// handle -l immediately is passed
 			if opts.PrintFilesWithMatches {
-				fmt.Println(magenta("(standard input)"))
+				fmt.Println(colorize("(standard input)", magenta, opts.NoColor))
 				return false
 			}
 			// if there's no -c, handle normally
 			if !opts.PrintCountPerFile {
-				fmt.Println(m.Format(r, formatter, opts.ShowLineNumbers))
+				fmt.Println(m.Format(r, formatter, opts))
 			}
 			return true
 		})
@@ -150,29 +151,33 @@ func main() {
 }
 
 func getOutput(r search.Result, opts search.Options, multipleFiles bool) {
-	formatter := search.Formatter{
-		Highlight: func(s string) string { return red(s) },
-		LineNum:   func(s string) string { return green(s) },
-		Sep:       func(s string) string { return magenta(s) },
-	}
+	path := colorize(r.Path, magenta, opts.NoColor)
+	separator := colorize(":", magenta, opts.NoColor)
 
 	if opts.PrintFilesWithMatches {
 		if r.HasMatch {
-			fmt.Println(magenta(r.Path))
+			fmt.Println(path)
 		}
 	} else if opts.PrintCountPerFile {
 		if multipleFiles {
-			fmt.Printf("%s:%d\n", magenta(r.Path), r.Count)
+			fmt.Printf("%s%s%d\n", path, separator, r.Count)
 		} else {
 			fmt.Println(r.Count)
 		}
 	} else {
 		for _, m := range r.Matches {
 			if multipleFiles {
-				fmt.Printf("%s%s%s\n", magenta(r.Path), magenta(":"), m.Format(r.RegexpPattern, formatter, opts.ShowLineNumbers))
+				fmt.Printf("%s%s%s\n", path, separator, m.Format(r.RegexpPattern, formatter, opts))
 			} else {
-				fmt.Println(m.Format(r.RegexpPattern, formatter, opts.ShowLineNumbers))
+				fmt.Println(m.Format(r.RegexpPattern, formatter, opts))
 			}
 		}
 	}
+}
+
+func colorize(s string, f func(a ...any) string, noColor bool) string {
+	if noColor {
+		return s
+	}
+	return f(s)
 }

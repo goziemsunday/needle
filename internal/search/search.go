@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 )
 
 type Options struct {
@@ -21,6 +22,7 @@ type Options struct {
 	Include               string
 	Exclude               string
 	ExcludeDir            string
+	NoColor               bool
 }
 
 type Match struct {
@@ -29,18 +31,27 @@ type Match struct {
 }
 
 type Formatter struct {
-	Highlight func(string) string
-	LineNum   func(string) string
-	Sep       func(string) string
+	Highlight func(a ...any) string
+	LineNum   func(a ...any) string
+	Sep       func(a ...any) string
 }
 
-func (m Match) Format(re *regexp.Regexp, f Formatter, showLineNumbers bool) string {
-	highlighted := re.ReplaceAllStringFunc(m.Line, f.Highlight)
-	if showLineNumbers {
-		lineNum := fmt.Sprintf("%d", m.LineNumber)
-		return fmt.Sprintf("%s%s%s", f.LineNum(lineNum), f.Sep(":"), highlighted)
+func (m Match) Format(re *regexp.Regexp, f Formatter, opts Options) string {
+	matchedLine := m.Line
+	lineNum := strconv.Itoa(m.LineNumber)
+	separator := ":"
+
+	if !opts.NoColor {
+		matchedLine = re.ReplaceAllStringFunc(matchedLine, func(s string) string {
+			return f.Highlight(s)
+		})
+		lineNum = f.LineNum(lineNum)
+		separator = f.Sep(separator)
 	}
-	return highlighted
+	if opts.ShowLineNumbers {
+		return fmt.Sprintf("%s%s%s", lineNum, separator, matchedLine)
+	}
+	return matchedLine
 }
 
 type Result struct {

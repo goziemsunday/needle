@@ -3,12 +3,15 @@ package search
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
+	"sync"
 )
 
 type Options struct {
@@ -21,7 +24,6 @@ type Options struct {
 	Include               string
 	Exclude               string
 	ExcludeDir            string
-	NoColor               bool
 }
 
 type Match struct {
@@ -66,7 +68,11 @@ func compilePattern(pattern string, opts Options) (*regexp.Regexp, error) {
 	return regexp.Compile(pattern)
 }
 
-func SearchStdin(pattern string, opts Options, onMatch func(Match, *regexp.Regexp) bool) (Result, error) {
+func SearchStdin(
+	pattern string,
+	opts Options,
+	onMatch func(Match, *regexp.Regexp) bool,
+) (Result, error) {
 	// get regexp object from pattern and opts
 	re, err := compilePattern(pattern, opts)
 	if err != nil {
@@ -98,7 +104,11 @@ func SearchStdin(pattern string, opts Options, onMatch func(Match, *regexp.Regex
 	}, scanner.Err()
 }
 
-func Search(r io.Reader, path, pattern string, opts Options) (Result, error) {
+func Search(
+	r io.Reader,
+	path, pattern string,
+	opts Options,
+) (Result, error) {
 	// get regexp object from pattern and opts
 	re, err := compilePattern(pattern, opts)
 	if err != nil {
@@ -161,7 +171,17 @@ func fileMatchesFilters(name string, opts Options) (bool, error) {
 	return true, nil
 }
 
-func SearchFile(path, pattern string, opts Options) (Result, error) {
+func SearchFile(
+	ctx context.Context,
+	path, pattern string,
+	opts Options,
+) (Result, error) {
+	select {
+	case <-ctx.Done():
+		return Result{}, ctx.Err()
+	default:
+	}
+
 	// ensure path matches include/exclude filters if given
 	ok, err := fileMatchesFilters(filepath.Base(path), opts)
 	if err != nil {
@@ -197,8 +217,103 @@ func SearchFile(path, pattern string, opts Options) (Result, error) {
 	return Search(r, path, pattern, opts)
 }
 
-func SearchDir(root, pattern string, opts Options) ([]Result, error) {
+type workerResult struct {
+	Path   string
+	Result Result
+	Err    error
+}
+
+func searchFileWorker(
+	ctx context.Context,
+	jobs <-chan string,
+	workerResults chan<- workerResult,
+	pattern string,
+	opts Options,
+) {
+	for {
+		select {
+		case <-ctx.Done():
+			// worker cancelled while waiting for job
+			return
+
+		case path, ok := <-jobs:
+			// check if the jobs channel is closed
+			if !ok {
+				// jobs channel closed, exiting
+				return
+			}
+
+			// pass path from jobs channel to search file
+			result, err := SearchFile(ctx, path, pattern, opts)
+
+			select {
+			case <-ctx.Done():
+				// worker cancelled after picking up the path; dropping result
+				return
+
+			case workerResults <- workerResult{Path: path, Result: result, Err: err}:
+			}
+		}
+	}
+}
+
+func searchPaths(
+	ctx context.Context,
+	paths []string,
+	pattern string,
+	opts Options,
+) ([]Result, error) {
+	numPaths := len(paths)
+	pathChan := make(chan string, numPaths)
+	resultsChan := make(chan workerResult, numPaths)
+
+	workerCount := runtime.NumCPU()
+
+	// start workers
+	var wg sync.WaitGroup
+	for range workerCount {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			searchFileWorker(ctx, pathChan, resultsChan, pattern, opts)
+		}()
+	}
+
+	// send jobs into the workers, and close jobs channel
+	for _, p := range paths {
+		pathChan <- p
+	}
+	close(pathChan)
+
+	go func() {
+		// start waiter concurrently with workers so main can collect results
+		wg.Wait()
+		// close the results channel once the workers all exit
+		close(resultsChan)
+	}()
+
+	// collect and handle results
 	var results []Result
+	for r := range resultsChan {
+		if err := r.Err; err != nil {
+			fmt.Fprintf(os.Stderr, "needle: %s: %v\n", r.Path, err)
+			continue
+		}
+
+		results = append(results, r.Result)
+	}
+
+	return results, nil
+}
+
+func SearchDir(ctx context.Context, root, pattern string, opts Options) ([]Result, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
+	var paths []string
 
 	// traverse through the given directory
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -226,22 +341,14 @@ func SearchDir(root, pattern string, opts Options) ([]Result, error) {
 		}
 
 		if !d.IsDir() {
-			result, err := SearchFile(path, pattern, opts)
-			if err != nil {
-				// skip unreadable files, don't abort the whole walk
-				fmt.Fprintf(os.Stderr, "needle: %s: %v\n", path, err)
-				return nil
-			}
-
-			results = append(results, result)
+			paths = append(paths, path)
 		}
 
 		return nil
 	})
-
 	if err != nil {
 		return nil, err
 	}
 
-	return results, nil
+	return searchPaths(ctx, paths, pattern, opts)
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"regexp"
@@ -23,6 +24,10 @@ var (
 )
 
 func main() {
+	// context with cancel
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	// flags
 	ignoreCase := pflag.BoolP("ignore-case", "i", false, "ignore case distinctions in patterns")
 	showLineNumbers := pflag.BoolP("line-number", "n", false, "print line number with output lines")
@@ -59,7 +64,6 @@ func main() {
 		Include:               *include,
 		Exclude:               *exclude,
 		ExcludeDir:            *excludeDir,
-		NoColor:               *noColor,
 	}
 
 	// enable no-color mode if stdout is not a terminal
@@ -79,7 +83,7 @@ func main() {
 		}
 
 		for _, root := range roots {
-			results, err := search.SearchDir(root, pattern, opts)
+			results, err := search.SearchDir(ctx, root, pattern, opts)
 			if err != nil {
 				fmt.Fprintln(os.Stderr, err)
 				os.Exit(1)
@@ -136,7 +140,7 @@ func main() {
 	multipleFiles := len(paths) > 1
 
 	for _, p := range paths {
-		result, err := search.SearchFile(p, pattern, opts)
+		result, err := search.SearchFile(ctx, p, pattern, opts)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)

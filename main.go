@@ -5,7 +5,7 @@ import (
 	"os"
 	"regexp"
 
-	"github.com/chiagxziem/needle/internal/search"
+	"github.com/goziemsunday/needle/internal/search"
 	"github.com/fatih/color"
 	"github.com/spf13/pflag"
 	"golang.org/x/term"

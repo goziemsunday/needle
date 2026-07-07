@@ -1,4 +1,4 @@
-module github.com/chiagxziem/needle
+module github.com/goziemsunday/needle
 
 go 1.26.2
 

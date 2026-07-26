@@ -12,9 +12,11 @@ Grep-like search tool in Go.
 
 ## Project Layout
 
-- `main.go` — CLI entry point, flag parsing, output formatting, orchestration
-- `internal/search/search.go` — core search engine, file ops, concurrent worker pool, filtering
-- `ORGANIZATION.md` — planned refactoring (not yet implemented)
+- `main.go` — thin entry point, calls `cmd.Run()`
+- `cmd/root.go` — CLI orchestration, flag parsing, mode dispatch, output formatting
+- `internal/search/` — core search engine (`search.go`), file ops + workers (`file.go`), filtering (`filter.go`), types (`types.go`)
+- `internal/output/output.go` — output formatting, colors, `FormatMatch`, `GetOutput`
+- `ORGANIZATION.md` — architecture documentation
 - `ROADMAP.md` — feature roadmap with implementation notes
 
 ## Conventions
@@ -29,5 +31,5 @@ Grep-like search tool in Go.
 ## Gotchas
 
 - No tests exist yet; `just test` will pass vacuously
-- `main.go` contains formatting logic that ORGANIZATION.md plans to move to `internal/output/`
 - Go 1.26.2 required (check `go.mod`)
+- `SearchStdin` accepts a `ctx context.Context` but never checks `ctx.Done()` — it can block on `scanner.Scan()` if context is cancelled while reading stdin

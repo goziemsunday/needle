@@ -9,6 +9,7 @@ type Options struct {
 	PrintFilesWithMatches bool
 	UseFixedStrings       bool
 	RecursiveSearch       bool
+	InvertMatch           bool
 	Include               string
 	Exclude               string
 	ExcludeDir            string

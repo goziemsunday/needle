@@ -23,6 +23,7 @@ func Run() error {
 	printFilesWithMatches := pflag.BoolP("files-with-matches", "l", false, "print only names of files with matches")
 	recursiveSearch := pflag.BoolP("recursive", "r", false, "search files & directories recursively")
 	useFixedStrings := pflag.BoolP("fixed-strings", "F", false, "use patterns as strings instead of regular expressions")
+	invertMatch := pflag.BoolP("invert-match", "v", false, "print lines that do not match the pattern")
 	include := pflag.String("include", "", "search only files matching glob e.g. '*.go'")
 	exclude := pflag.String("exclude", "", "skip files that match glob e.g. '*.go'")
 	excludeDir := pflag.String("exclude-dir", "", "skip directories matching glob e.g. 'vendor'")
@@ -49,6 +50,7 @@ func Run() error {
 		PrintFilesWithMatches: *printFilesWithMatches,
 		UseFixedStrings:       *useFixedStrings,
 		RecursiveSearch:       *recursiveSearch,
+		InvertMatch:           *invertMatch,
 		Include:               *include,
 		Exclude:               *exclude,
 		ExcludeDir:            *excludeDir,
@@ -98,7 +100,7 @@ func Run() error {
 		result, err := search.SearchStdin(
 			ctx, pattern, opts,
 			func(m search.Match, r *regexp.Regexp) bool {
-				// handle -l immediately is passed
+				// handle -l immediately if passed
 				if opts.PrintFilesWithMatches {
 					fmt.Println(output.Magenta("(standard input)"))
 					return false

@@ -41,8 +41,13 @@ func SearchStdin(
 	for scanner.Scan() {
 		lineNumber++
 		line := scanner.Text()
+		matched := re.MatchString(line)
 
-		if re.MatchString(line) {
+		if opts.InvertMatch {
+			matched = !matched
+		}
+
+		if matched {
 			m := Match{lineNumber, line}
 			matches = append(matches, m)
 			if !onMatch(m, re) {
@@ -79,8 +84,13 @@ func Search(
 	for scanner.Scan() {
 		lineNumber++
 		line := scanner.Text()
+		matched := re.MatchString(line)
 
-		if re.MatchString(line) {
+		if opts.InvertMatch {
+			matched = !matched
+		}
+
+		if matched {
 			matches = append(matches, Match{
 				LineNumber: lineNumber,
 				Line:       line,

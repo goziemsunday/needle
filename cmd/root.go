@@ -78,12 +78,13 @@ func Run() error {
 				return err
 			}
 
+			multipleFiles := len(results) > 1
 			for _, result := range results {
 				if result.HasMatch {
 					hasAnyMatch = true
 				}
 
-				output.GetOutput(result, opts, true)
+				output.GetOutput(result, opts, multipleFiles)
 			}
 		}
 

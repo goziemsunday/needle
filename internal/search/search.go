@@ -50,9 +50,17 @@ func SearchStdin(
 		if matched {
 			m := Match{lineNumber, line}
 			matches = append(matches, m)
+
+			// if -q is passed, break the loop
+			if opts.Quiet {
+				break
+			}
+
+			// if the callback returns false, break the loop
 			if !onMatch(m, re) {
 				break
 			}
+
 		}
 	}
 
@@ -95,6 +103,10 @@ func Search(
 				LineNumber: lineNumber,
 				Line:       line,
 			})
+
+			if opts.Quiet {
+				break
+			}
 		}
 	}
 

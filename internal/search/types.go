@@ -10,6 +10,7 @@ type Options struct {
 	UseFixedStrings       bool
 	RecursiveSearch       bool
 	InvertMatch           bool
+	Quiet                 bool
 	Include               string
 	Exclude               string
 	ExcludeDir            string

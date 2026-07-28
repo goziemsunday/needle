@@ -3,6 +3,7 @@ package search
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -76,6 +77,7 @@ func SearchFile(
 
 func searchFileWorker(
 	ctx context.Context,
+	cancel context.CancelFunc,
 	paths <-chan string,
 	workerResults chan<- workerResult,
 	pattern string,
@@ -97,6 +99,12 @@ func searchFileWorker(
 			// pass path from jobs channel to search file
 			result, err := SearchFile(ctx, path, pattern, opts)
 
+			// if -q is passed and a match is found, cancel all other worker
+			if opts.Quiet && result.HasMatch {
+				cancel()
+				return
+			}
+
 			select {
 			case <-ctx.Done():
 				// worker cancelled after picking up the path; dropping result
@@ -110,6 +118,7 @@ func searchFileWorker(
 
 func searchPaths(
 	ctx context.Context,
+	cancel context.CancelFunc,
 	paths []string,
 	pattern string,
 	opts Options,
@@ -124,7 +133,7 @@ func searchPaths(
 	var wg sync.WaitGroup
 	for range workerCount {
 		wg.Go(func() {
-			searchFileWorker(ctx, pathsChan, resultsChan, pattern, opts)
+			searchFileWorker(ctx, cancel, pathsChan, resultsChan, pattern, opts)
 		})
 	}
 
@@ -144,6 +153,11 @@ func searchPaths(
 	var results []Result
 	for r := range resultsChan {
 		if err := r.Err; err != nil {
+			if errors.Is(err, context.Canceled) {
+				// expected in workers when -q is passed
+				// done to prevent printing an error msg when context.Canceled occurs
+				continue
+			}
 			fmt.Fprintf(os.Stderr, "needle: %s: %v\n", r.Path, err)
 			continue
 		}
@@ -156,6 +170,7 @@ func searchPaths(
 
 func SearchDir(
 	ctx context.Context,
+	cancel context.CancelFunc,
 	root, pattern string,
 	opts Options,
 ) ([]Result, error) {
@@ -203,5 +218,5 @@ func SearchDir(
 		return nil, err
 	}
 
-	return searchPaths(ctx, paths, pattern, opts)
+	return searchPaths(ctx, cancel, paths, pattern, opts)
 }

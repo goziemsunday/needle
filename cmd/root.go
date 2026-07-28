@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"regexp"
@@ -24,6 +25,7 @@ func Run() error {
 	recursiveSearch := pflag.BoolP("recursive", "r", false, "search files & directories recursively")
 	useFixedStrings := pflag.BoolP("fixed-strings", "F", false, "use patterns as strings instead of regular expressions")
 	invertMatch := pflag.BoolP("invert-match", "v", false, "print lines that do not match the pattern")
+	quiet := pflag.BoolP("quiet", "q", false, "suppress all output, exit immediately on first match")
 	include := pflag.String("include", "", "search only files matching glob e.g. '*.go'")
 	exclude := pflag.String("exclude", "", "skip files that match glob e.g. '*.go'")
 	excludeDir := pflag.String("exclude-dir", "", "skip directories matching glob e.g. 'vendor'")
@@ -51,6 +53,7 @@ func Run() error {
 		UseFixedStrings:       *useFixedStrings,
 		RecursiveSearch:       *recursiveSearch,
 		InvertMatch:           *invertMatch,
+		Quiet:                 *quiet,
 		Include:               *include,
 		Exclude:               *exclude,
 		ExcludeDir:            *excludeDir,
@@ -72,10 +75,21 @@ func Run() error {
 		}
 
 		for _, root := range roots {
-			results, err := search.SearchDir(ctx, root, pattern, opts)
+			results, err := search.SearchDir(ctx, cancel, root, pattern, opts)
 			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					// exit 0 when -q is passed and context.Canceled occurs
+					hasAnyMatch = true
+					break
+				}
 				fmt.Fprintln(os.Stderr, err)
 				return err
+			}
+
+			// match found by worker, context was cancelled
+			if ctx.Err() != nil {
+				hasAnyMatch = true
+				break
 			}
 
 			multipleFiles := len(results) > 1
@@ -123,7 +137,7 @@ func Run() error {
 		}
 
 		// handle -c after all input is read
-		if opts.PrintCountPerFile && !opts.PrintFilesWithMatches {
+		if opts.PrintCountPerFile && !opts.PrintFilesWithMatches && !opts.Quiet {
 			fmt.Println(result.Count)
 		}
 
@@ -144,10 +158,14 @@ func Run() error {
 			hasAnyMatch = true
 		}
 
+		// if -q is passed, break the loop once a match is found
+		if opts.Quiet && hasAnyMatch {
+			break
+		}
+
 		output.GetOutput(result, opts, multipleFiles)
 	}
 
-	// if no file matches the pattern, exit the program with code 1
 	if !hasAnyMatch {
 		return fmt.Errorf("no match found")
 	}

@@ -49,6 +49,10 @@ func FormatMatch(
 }
 
 func GetOutput(r search.Result, opts search.Options, multipleFiles bool) {
+	if opts.Quiet {
+		return
+	}
+
 	if opts.PrintFilesWithMatches {
 		if r.HasMatch {
 			fmt.Println(Magenta(r.Path))

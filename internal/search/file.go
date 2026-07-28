@@ -21,7 +21,8 @@ type workerResult struct {
 
 func SearchFile(
 	ctx context.Context,
-	path, pattern string,
+	path string,
+	patterns []string,
 	opts Options,
 ) (Result, error) {
 	// return immediately if the search was cancelled
@@ -72,7 +73,7 @@ func SearchFile(
 	// stitch the already-read bytes with the rest of the file
 	r := io.MultiReader(bytes.NewReader(buf[:n]), file)
 
-	return Search(ctx, r, path, pattern, opts)
+	return Search(ctx, r, path, patterns, opts)
 }
 
 func searchFileWorker(
@@ -80,7 +81,7 @@ func searchFileWorker(
 	cancel context.CancelFunc,
 	paths <-chan string,
 	workerResults chan<- workerResult,
-	pattern string,
+	patterns []string,
 	opts Options,
 ) {
 	for {
@@ -97,7 +98,7 @@ func searchFileWorker(
 			}
 
 			// pass path from jobs channel to search file
-			result, err := SearchFile(ctx, path, pattern, opts)
+			result, err := SearchFile(ctx, path, patterns, opts)
 
 			// if -q is passed and a match is found, cancel all other worker
 			if opts.Quiet && result.HasMatch {
@@ -120,7 +121,7 @@ func searchPaths(
 	ctx context.Context,
 	cancel context.CancelFunc,
 	paths []string,
-	pattern string,
+	patterns []string,
 	opts Options,
 ) ([]Result, error) {
 	numPaths := len(paths)
@@ -133,7 +134,7 @@ func searchPaths(
 	var wg sync.WaitGroup
 	for range workerCount {
 		wg.Go(func() {
-			searchFileWorker(ctx, cancel, pathsChan, resultsChan, pattern, opts)
+			searchFileWorker(ctx, cancel, pathsChan, resultsChan, patterns, opts)
 		})
 	}
 
@@ -171,7 +172,8 @@ func searchPaths(
 func SearchDir(
 	ctx context.Context,
 	cancel context.CancelFunc,
-	root, pattern string,
+	root string,
+	patterns []string,
 	opts Options,
 ) ([]Result, error) {
 	// return immediately if the search was cancelled
@@ -218,5 +220,5 @@ func SearchDir(
 		return nil, err
 	}
 
-	return searchPaths(ctx, cancel, paths, pattern, opts)
+	return searchPaths(ctx, cancel, paths, patterns, opts)
 }

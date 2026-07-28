@@ -32,18 +32,31 @@ func Run() error {
 	excludeDir := pflag.String("exclude-dir", "", "skip directories matching glob e.g. 'vendor'")
 	noColor := pflag.Bool("no-color", false, "never highlight the matching strings")
 
+	var extraPatterns []string
+	pflag.StringArrayVarP(&extraPatterns, "regexp", "e", nil, "use pattern for matching (can be repeated)")
+
 	// parse the command line into the defined flags
 	pflag.Parse()
 
+	// get patterns and paths, if given
+	var patterns []string
+	var paths []string
+	if len(extraPatterns) > 0 {
+		// -e patterns provided, all positional args are paths
+		paths = pflag.Args()
+	} else if len(pflag.Args()) > 0 {
+		// no -e patterns, first positional arg is the pattern
+		patterns = append(patterns, pflag.Arg(0))
+		paths = pflag.Args()[1:]
+	}
+	patterns = append(patterns, extraPatterns...)
+
 	// show usage & help message if no pattern is passed
-	if len(pflag.Args()) == 0 {
-		fmt.Fprintln(os.Stderr, "Usage: needle [OPTION]... PATTERNS [FILE]...")
+	if len(patterns) == 0 {
+		fmt.Fprintln(os.Stderr, "Usage: needle [OPTION]... PATTERN [FILE]...")
 		fmt.Fprintln(os.Stderr, "Try 'needle --help' for more information.")
 		return fmt.Errorf("no pattern passed")
 	}
-
-	// get pattern and paths, if given
-	pattern, paths := pflag.Arg(0), pflag.Args()[1:]
 
 	// define opts from flags
 	opts := search.Options{
@@ -77,7 +90,7 @@ func Run() error {
 		}
 
 		for _, root := range roots {
-			results, err := search.SearchDir(ctx, cancel, root, pattern, opts)
+			results, err := search.SearchDir(ctx, cancel, root, patterns, opts)
 			if err != nil {
 				if errors.Is(err, context.Canceled) {
 					// exit 0 when -q is passed and context.Canceled occurs
@@ -115,7 +128,7 @@ func Run() error {
 	// STDIN MODE
 	if len(paths) == 0 {
 		result, err := search.SearchStdin(
-			ctx, pattern, opts,
+			ctx, patterns, opts,
 			func(m search.Match, r *regexp.Regexp) bool {
 				// handle -l immediately if passed
 				if opts.PrintFilesWithMatches {
@@ -150,10 +163,10 @@ func Run() error {
 	multipleFiles := len(paths) > 1
 
 	for _, p := range paths {
-		result, err := search.SearchFile(ctx, p, pattern, opts)
+		result, err := search.SearchFile(ctx, p, patterns, opts)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			return err
+			continue
 		}
 
 		if result.HasMatch {

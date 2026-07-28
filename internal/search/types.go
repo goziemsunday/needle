@@ -28,4 +28,5 @@ type Result struct {
 	Count         int
 	HasMatch      bool
 	RegexpPattern *regexp.Regexp
+	Patterns      []string
 }

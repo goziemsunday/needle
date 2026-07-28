@@ -7,33 +7,40 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"strings"
 )
 
-func compilePattern(pattern string, opts Options) (*regexp.Regexp, error) {
-	// escape all regexp metacharacters when -F is passed
-	if opts.UseFixedStrings {
-		pattern = regexp.QuoteMeta(pattern)
+func compilePattern(patterns []string, opts Options) (*regexp.Regexp, error) {
+	var compiled []string
+	for _, p := range patterns {
+		// escape all regexp metacharacters when -F is passed
+		if opts.UseFixedStrings {
+			p = regexp.QuoteMeta(p)
+		}
+		// prefix pattern with regexp for case-insensitive matching
+		if opts.IgnoreCase {
+			p = "(?i)" + p
+		}
+		// wrap pattern with `\b` for matching whole words
+		if opts.WordBoundary {
+			p = fmt.Sprintf(`\b%s\b`, p)
+		}
+		compiled = append(compiled, p)
 	}
-	// prefix pattern with regexp for case-insensitive matching
-	if opts.IgnoreCase {
-		pattern = "(?i)" + pattern
-	}
-	// wrap pattern with `\b` for matching whole words
-	if opts.WordBoundary {
-		pattern = fmt.Sprintf(`\b%s\b`, pattern)
-	}
-	// compile pattern into regexp object
-	return regexp.Compile(pattern)
+
+	// compile combined pattern into regexp object
+	combined := strings.Join(compiled, "|")
+	return regexp.Compile(combined)
 }
 
 func SearchStdin(
 	ctx context.Context,
-	pattern string,
+	patterns []string,
 	opts Options,
 	onMatch func(Match, *regexp.Regexp) bool,
 ) (Result, error) {
 	// get regexp object from pattern and opts
-	re, err := compilePattern(pattern, opts)
+	re, err := compilePattern(patterns, opts)
 	if err != nil {
 		return Result{}, fmt.Errorf("invalid pattern: %w", err)
 	}
@@ -73,17 +80,19 @@ func SearchStdin(
 		Count:         len(matches),
 		HasMatch:      len(matches) > 0,
 		RegexpPattern: re,
+		Patterns:      patterns,
 	}, scanner.Err()
 }
 
 func Search(
 	ctx context.Context,
 	r io.Reader,
-	path, pattern string,
+	path string,
+	patterns []string,
 	opts Options,
 ) (Result, error) {
 	// get regexp object from pattern and opts
-	re, err := compilePattern(pattern, opts)
+	re, err := compilePattern(patterns, opts)
 	if err != nil {
 		return Result{}, fmt.Errorf("invalid pattern: %w", err)
 	}
@@ -124,5 +133,6 @@ func Search(
 		Count:         len(matches),
 		HasMatch:      len(matches) > 0,
 		RegexpPattern: re,
+		Patterns:      patterns,
 	}, nil
 }

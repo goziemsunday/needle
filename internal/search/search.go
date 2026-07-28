@@ -18,6 +18,10 @@ func compilePattern(pattern string, opts Options) (*regexp.Regexp, error) {
 	if opts.IgnoreCase {
 		pattern = "(?i)" + pattern
 	}
+	// wrap pattern with `\b` for matching whole words
+	if opts.WordBoundary {
+		pattern = fmt.Sprintf(`\b%s\b`, pattern)
+	}
 	// compile pattern into regexp object
 	return regexp.Compile(pattern)
 }

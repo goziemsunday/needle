@@ -11,6 +11,7 @@ type Options struct {
 	RecursiveSearch       bool
 	InvertMatch           bool
 	Quiet                 bool
+	WordBoundary          bool
 	Include               string
 	Exclude               string
 	ExcludeDir            string

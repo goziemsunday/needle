@@ -26,6 +26,7 @@ func Run() error {
 	useFixedStrings := pflag.BoolP("fixed-strings", "F", false, "use patterns as strings instead of regular expressions")
 	invertMatch := pflag.BoolP("invert-match", "v", false, "print lines that do not match the pattern")
 	quiet := pflag.BoolP("quiet", "q", false, "suppress all output, exit immediately on first match")
+	wordBoundary := pflag.BoolP("word-regexp", "w", false, "matches only whole words")
 	include := pflag.String("include", "", "search only files matching glob e.g. '*.go'")
 	exclude := pflag.String("exclude", "", "skip files that match glob e.g. '*.go'")
 	excludeDir := pflag.String("exclude-dir", "", "skip directories matching glob e.g. 'vendor'")
@@ -54,6 +55,7 @@ func Run() error {
 		RecursiveSearch:       *recursiveSearch,
 		InvertMatch:           *invertMatch,
 		Quiet:                 *quiet,
+		WordBoundary:          *wordBoundary,
 		Include:               *include,
 		Exclude:               *exclude,
 		ExcludeDir:            *excludeDir,

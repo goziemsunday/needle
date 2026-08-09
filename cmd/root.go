@@ -40,6 +40,7 @@ func Run() error {
 	fullContext := pflag.IntP("context", "C", 0, "print N lines before and after each match")
 	groupSep := pflag.String("group-separator", "--", "separator between context groups")
 	noGroupSep := pflag.Bool("no-group-separator", false, "do not print separator for matches with context")
+	help := pflag.BoolP("help", "h", false, "show help and exit")
 
 	// multiple patterns
 	var extraPatterns []string
@@ -55,6 +56,12 @@ func Run() error {
 
 	// parse the command line into the defined flags
 	pflag.Parse()
+
+	// -h/--help prints the help screen to stdout and exits 0
+	if *help {
+		printHelp()
+		return nil
+	}
 
 	// validate colorWhen
 	// (yes = always, no = never, tty = auto) and exits 0 with the

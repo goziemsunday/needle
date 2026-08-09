@@ -24,33 +24,30 @@ func SearchStdin(
 		return Result{}, fmt.Errorf("invalid pattern: %w", err)
 	}
 
-	// peek the first 512 bytes to detect binary (NUL byte) input; grep
-	// suppresses per-line output for binary input, so the line-printing
-	// callbacks are skipped while the scan keeps running for counts
-	bufReader := bufio.NewReader(os.Stdin)
-	// Read consumes the first chunk and it is re-fed below, so no bytes
-	// are lost or doubled
-	buf := make([]byte, 512)
-	n, _ := bufReader.Read(buf)
-	binaryHead := buf[:n]
-	isBinary := bytes.IndexByte(binaryHead, 0) != -1
-
-	scanner := bufio.NewScanner(io.MultiReader(bytes.NewReader(binaryHead), bufReader))
+	scanner := bufio.NewScanner(os.Stdin)
+	scanner.Split(scanLinesKeepCR)
 	// raise the 64KB scanner cap
 	scanner.Buffer(make([]byte, 64*1024), 1<<30)
 	lineNumber := 0
+	isBinary := false
 	var matches []Match
-
-	// binary input: skip line printing unless -l/-c/-q
-	suppress := isBinary && !opts.PrintFilesWithMatches && !opts.PrintCountPerFile && !opts.Quiet
 
 	ring := newLineRing(opts.BeforeContext + 1)
 	afterRemaining := 0
 
 	for scanner.Scan() {
 		lineNumber++
-		line := scanner.Text()
+		raw := scanner.Bytes()
+		line := string(raw)
 		ring.add(line, lineNumber)
+
+		// a NUL byte anywhere in the input marks it binary; grep skips
+		// per-line output for binary input, so the line-printing
+		// callbacks are skipped once the first NUL is seen while the
+		// scan keeps running for counts
+		if bytes.IndexByte(raw, 0) != -1 {
+			isBinary = true
+		}
 
 		matched := re.MatchString(line)
 		if opts.InvertMatch {
@@ -73,9 +70,12 @@ func SearchStdin(
 				break
 			}
 
-			// if the callback returns false, break the loop
-			if !suppress && !onMatch(m, re) {
-				break
+			// if the callback returns false, break the loop; binary
+			// input skips line printing unless -l needs the name
+			if !isBinary || opts.PrintFilesWithMatches {
+				if !onMatch(m, re) {
+					break
+				}
 			}
 
 		} else if afterRemaining > 0 {
@@ -84,7 +84,7 @@ func SearchStdin(
 			ctxLine := ContextLine{Number: lineNumber, Text: line}
 			last.After = append(last.After, ctxLine)
 			afterRemaining--
-			if !suppress && !onContextLine(ctxLine) {
+			if !isBinary && !onContextLine(ctxLine) {
 				break
 			}
 		}
@@ -114,9 +114,11 @@ func Search(
 	}
 
 	scanner := bufio.NewScanner(r)
+	scanner.Split(scanLinesKeepCR)
 	// raise the 64KB scanner cap
 	scanner.Buffer(make([]byte, 64*1024), 1<<30)
 	lineNumber := 0
+	isBinary := false
 	var matches []Match
 
 	ring := newLineRing(opts.BeforeContext + 1)
@@ -125,8 +127,16 @@ func Search(
 	// scan the file, and get matches if any
 	for scanner.Scan() {
 		lineNumber++
-		line := scanner.Text()
+		raw := scanner.Bytes()
+		line := string(raw)
 		ring.add(line, lineNumber)
+
+		// a NUL byte anywhere in the file marks it binary; the file is
+		// still scanned (exit status follows the match) but the caller
+		// suppresses per-line output
+		if bytes.IndexByte(raw, 0) != -1 {
+			isBinary = true
+		}
 
 		matched := re.MatchString(line)
 		if opts.InvertMatch {
@@ -165,6 +175,7 @@ func Search(
 		Matches:       matches,
 		Count:         len(matches),
 		HasMatch:      len(matches) > 0,
+		IsBinary:      isBinary,
 		RegexpPattern: re,
 		Patterns:      patterns,
 	}, nil
@@ -242,4 +253,19 @@ func (l *lineRing) beforeContext() []ContextLine {
 		ctx = append(ctx, ContextLine{Number: l.lineNums[idx], Text: l.lines[idx]})
 	}
 	return ctx
+}
+
+// scanLinesKeepCR splits on '\n' only; a trailing '\r' stays part of the
+// line, matching grep's line handling
+func scanLinesKeepCR(data []byte, atEOF bool) (advance int, token []byte, err error) {
+	if atEOF && len(data) == 0 {
+		return 0, nil, nil
+	}
+	if i := bytes.IndexByte(data, '\n'); i >= 0 {
+		return i + 1, data[:i], nil
+	}
+	if atEOF {
+		return len(data), data, nil
+	}
+	return 0, nil, nil
 }

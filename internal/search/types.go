@@ -18,6 +18,7 @@ type Options struct {
 	BeforeContext         int
 	AfterContext          int
 	GroupSeparator        string
+	NoGroupSeparator      bool
 }
 
 type ContextLine struct {

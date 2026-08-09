@@ -39,6 +39,7 @@ func Run() error {
 	afterContext := pflag.IntP("after-context", "A", 0, "print N lines after each match")
 	fullContext := pflag.IntP("context", "C", 0, "print N lines before and after each match")
 	groupSep := pflag.String("group-separator", "--", "separator between context groups")
+	noGroupSep := pflag.Bool("no-group-separator", false, "do not print separator for matches with context")
 
 	// multiple patterns
 	var extraPatterns []string
@@ -117,6 +118,7 @@ func Run() error {
 		BeforeContext:         *beforeContext,
 		AfterContext:          *afterContext,
 		GroupSeparator:        *groupSep,
+		NoGroupSeparator:      *noGroupSep,
 	}
 
 	// -C overrides both -A and -B

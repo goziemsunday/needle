@@ -114,7 +114,7 @@ func (p *matchPrinter) Reset(path string, multipleFiles bool) {
 func (p *matchPrinter) Print(m search.Match, re *regexp.Regexp) {
 	// separator decision
 	contextOn := p.opts.BeforeContext > 0 || p.opts.AfterContext > 0
-	if contextOn {
+	if contextOn && !p.opts.NoGroupSeparator {
 		if !p.inGroup && p.prevGroup {
 			// first group of a new file after a group was printed earlier
 			fmt.Println(DefaultFormatter.Sep(p.opts.GroupSeparator))

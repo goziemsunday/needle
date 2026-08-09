@@ -1,11 +1,9 @@
 package search
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -59,23 +57,7 @@ func SearchFile(
 	}
 	defer file.Close()
 
-	// read first 512 bytes to check for binary
-	buf := make([]byte, 512)
-	n, err := file.Read(buf)
-	if err != nil && err != io.EOF {
-		return Result{}, err
-	}
-
-	// NUL byte in the first chunk marks the file as binary; the file is
-	// still scanned (exit status follows the match) but the caller
-	// suppresses per-line output
-	isBinary := bytes.IndexByte(buf[:n], 0) != -1
-
-	// stitch the already-read bytes with the rest of the file
-	r := io.MultiReader(bytes.NewReader(buf[:n]), file)
-
-	result, err := Search(ctx, r, path, patterns, opts)
-	result.IsBinary = isBinary
+	result, err := Search(ctx, file, path, patterns, opts)
 	return result, err
 }
 

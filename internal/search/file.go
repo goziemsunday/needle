@@ -76,47 +76,6 @@ func SearchFile(
 	return Search(ctx, r, path, patterns, opts)
 }
 
-func searchFileWorker(
-	ctx context.Context,
-	cancel context.CancelFunc,
-	paths <-chan string,
-	workerResults chan<- workerResult,
-	patterns []string,
-	opts Options,
-) {
-	for {
-		select {
-		case <-ctx.Done():
-			// worker cancelled while waiting for job
-			return
-
-		case path, ok := <-paths:
-			// check if the jobs channel is closed
-			if !ok {
-				// jobs channel closed, exiting
-				return
-			}
-
-			// pass path from jobs channel to search file
-			result, err := SearchFile(ctx, path, patterns, opts)
-
-			// if -q is passed and a match is found, cancel all other worker
-			if opts.Quiet && result.HasMatch {
-				cancel()
-				return
-			}
-
-			select {
-			case <-ctx.Done():
-				// worker cancelled after picking up the path; dropping result
-				return
-
-			case workerResults <- workerResult{Path: path, Result: result, Err: err}:
-			}
-		}
-	}
-}
-
 func searchPaths(
 	ctx context.Context,
 	cancel context.CancelFunc,
@@ -167,6 +126,47 @@ func searchPaths(
 	}
 
 	return results, nil
+}
+
+func searchFileWorker(
+	ctx context.Context,
+	cancel context.CancelFunc,
+	paths <-chan string,
+	workerResults chan<- workerResult,
+	patterns []string,
+	opts Options,
+) {
+	for {
+		select {
+		case <-ctx.Done():
+			// worker cancelled while waiting for job
+			return
+
+		case path, ok := <-paths:
+			// check if the jobs channel is closed
+			if !ok {
+				// jobs channel closed, exiting
+				return
+			}
+
+			// pass path from jobs channel to search file
+			result, err := SearchFile(ctx, path, patterns, opts)
+
+			// if -q is passed and a match is found, cancel all other worker
+			if opts.Quiet && result.HasMatch {
+				cancel()
+				return
+			}
+
+			select {
+			case <-ctx.Done():
+				// worker cancelled after picking up the path; dropping result
+				return
+
+			case workerResults <- workerResult{Path: path, Result: result, Err: err}:
+			}
+		}
+	}
 }
 
 func SearchDir(

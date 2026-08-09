@@ -15,11 +15,21 @@ type Options struct {
 	Include               string
 	Exclude               string
 	ExcludeDir            string
+	BeforeContext         int
+	AfterContext          int
+	GroupSeparator        string
+}
+
+type ContextLine struct {
+	Number int
+	Text   string
 }
 
 type Match struct {
 	LineNumber int
 	Line       string
+	Before     []ContextLine
+	After      []ContextLine
 }
 
 type Result struct {

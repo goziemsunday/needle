@@ -12,6 +12,10 @@ import (
 	"github.com/spf13/pflag"
 )
 
+type UsageError struct{ Msg string }
+
+func (e UsageError) Error() string { return e.Msg }
+
 func Run() error {
 	// create context with cancel
 	ctx, cancel := context.WithCancel(context.Background())
@@ -30,13 +34,33 @@ func Run() error {
 	include := pflag.String("include", "", "search only files matching glob e.g. '*.go'")
 	exclude := pflag.String("exclude", "", "skip files that match glob e.g. '*.go'")
 	excludeDir := pflag.String("exclude-dir", "", "skip directories matching glob e.g. 'vendor'")
-	noColor := pflag.Bool("no-color", false, "never highlight the matching strings")
+	beforeContext := pflag.IntP("before-context", "B", 0, "print N lines before each match")
+	afterContext := pflag.IntP("after-context", "A", 0, "print N lines after each match")
+	fullContext := pflag.IntP("context", "C", 0, "print N lines before and after each match")
+	groupSep := pflag.String("group-separator", "--", "separator between context groups")
 
+	// multiple patterns
 	var extraPatterns []string
 	pflag.StringArrayVarP(&extraPatterns, "regexp", "e", nil, "use pattern for matching (can be repeated)")
 
+	// color
+	colorWhen := "auto"
+	pflag.StringVar(&colorWhen, "color", "auto", "use markers to highlight the matching strings; WHEN is 'always', 'never', or 'auto'")
+	pflag.StringVar(&colorWhen, "colour", "auto", "use markers to highlight the matching strings; WHEN is 'always', 'never', or 'auto'")
+	// allow bare `--color`/`--colour`
+	pflag.Lookup("color").NoOptDefVal = "auto"
+	pflag.Lookup("colour").NoOptDefVal = "auto"
+
 	// parse the command line into the defined flags
 	pflag.Parse()
+
+	// validate colorWhen
+	whenColor := colorWhen
+	if whenColor != "auto" && whenColor != "always" && whenColor != "never" {
+		fmt.Fprintf(os.Stderr, "needle: invalid argument %q for '--color'; valid values are 'always', 'never', or 'auto'\n", whenColor)
+		fmt.Fprintln(os.Stderr, "Usage: needle [OPTION]... PATTERN [FILE]...")
+		return UsageError{Msg: "invalid argument for --color"}
+	}
 
 	// get patterns and paths, if given
 	var patterns []string
@@ -72,10 +96,21 @@ func Run() error {
 		Include:               *include,
 		Exclude:               *exclude,
 		ExcludeDir:            *excludeDir,
+		BeforeContext:         *beforeContext,
+		AfterContext:          *afterContext,
+		GroupSeparator:        *groupSep,
 	}
 
-	// enable no-color mode if stdout is not a terminal
-	output.SetupColors(noColor)
+	// -C overrides both -A and -B
+	if *fullContext > 0 {
+		opts.BeforeContext = *fullContext
+		opts.AfterContext = *fullContext
+	}
+
+	// color highlighting: "auto" = only when stdout is a terminal (default),
+	// "always" = force color even when piped (e.g. `less -R`), "never" = disable.
+	// bare --color behaves as "auto" via NoOptDefVal, matching grep.
+	output.SetupColors(colorWhen)
 
 	// init variable to track discovery of a match
 	hasAnyMatch := false
@@ -127,6 +162,8 @@ func Run() error {
 
 	// STDIN MODE
 	if len(paths) == 0 {
+		printer := output.NewMatchPrinter(opts, "", false)
+
 		result, err := search.SearchStdin(
 			ctx, patterns, opts,
 			func(m search.Match, r *regexp.Regexp) bool {
@@ -135,9 +172,15 @@ func Run() error {
 					fmt.Println(output.Magenta("(standard input)"))
 					return false
 				}
-				// if there's no -c, handle normally
+				// skip per-line printing for -c (count printed at the end)
 				if !opts.PrintCountPerFile {
-					fmt.Println(output.FormatMatch(m, r, output.DefaultFormatter, opts))
+					printer.Print(m, r)
+				}
+				return true
+			},
+			func(c search.ContextLine) bool {
+				if !opts.PrintCountPerFile {
+					printer.PrintContextLine(c)
 				}
 				return true
 			},

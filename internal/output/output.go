@@ -20,16 +20,22 @@ var (
 	Magenta          = color.New(color.FgMagenta).SprintFunc()
 	Green            = color.New(color.FgGreen).SprintFunc()
 	Red              = color.New(color.FgRed, color.Bold).SprintFunc()
+	Cyan             = color.New(color.FgCyan).SprintFunc()
 	DefaultFormatter = Formatter{
 		Highlight: Red,
 		LineNum:   Green,
-		Sep:       Magenta,
+		Sep:       Cyan,
 	}
 )
 
-func SetupColors(noColor *bool) {
-	if *noColor || !term.IsTerminal(int(os.Stdout.Fd())) {
+func SetupColors(when string) {
+	switch when {
+	case "always":
+		color.NoColor = false
+	case "never":
 		color.NoColor = true
+	default: // "auto"
+		color.NoColor = !term.IsTerminal(int(os.Stdout.Fd()))
 	}
 }
 
@@ -64,12 +70,78 @@ func GetOutput(r search.Result, opts search.Options, multipleFiles bool) {
 			fmt.Println(r.Count)
 		}
 	} else {
+		p := NewMatchPrinter(opts, r.Path, multipleFiles)
 		for _, m := range r.Matches {
-			if multipleFiles {
-				fmt.Printf("%s%s%s\n", Magenta(r.Path), Magenta(":"), FormatMatch(m, r.RegexpPattern, DefaultFormatter, opts))
-			} else {
-				fmt.Println(FormatMatch(m, r.RegexpPattern, DefaultFormatter, opts))
-			}
+			p.Print(m, r.RegexpPattern)
 		}
 	}
+}
+
+type matchPrinter struct {
+	opts          search.Options
+	path          string
+	multipleFiles bool
+	lastPrinted   int
+	inGroup       bool
+}
+
+func NewMatchPrinter(opts search.Options, path string, multipleFiles bool) *matchPrinter {
+	return &matchPrinter{opts: opts, path: path, multipleFiles: multipleFiles}
+}
+
+func (p *matchPrinter) Print(m search.Match, re *regexp.Regexp) {
+	// separator decision
+	if p.inGroup && (p.opts.BeforeContext > 0 || p.opts.AfterContext > 0) {
+		if m.LineNumber-len(m.Before) > p.lastPrinted+1 && p.opts.GroupSeparator != "" {
+			fmt.Println(DefaultFormatter.Sep(p.opts.GroupSeparator))
+		}
+	}
+	p.inGroup = true
+
+	for _, c := range m.Before {
+		if c.Number > p.lastPrinted {
+			printContextLine(p.path, c, DefaultFormatter, p.opts, p.multipleFiles)
+		}
+	}
+	printMatchLine(p.path, m, re, DefaultFormatter, p.opts, p.multipleFiles)
+	if m.LineNumber > p.lastPrinted {
+		p.lastPrinted = m.LineNumber
+	}
+	for _, c := range m.After {
+		if c.Number > p.lastPrinted {
+			printContextLine(p.path, c, DefaultFormatter, p.opts, p.multipleFiles)
+			p.lastPrinted = c.Number
+		}
+	}
+}
+
+// PrintContextLine prints an after-context line as it streams in
+func (p *matchPrinter) PrintContextLine(c search.ContextLine) {
+	if c.Number > p.lastPrinted {
+		printContextLine(p.path, c, DefaultFormatter, p.opts, p.multipleFiles)
+		p.lastPrinted = c.Number
+	}
+}
+
+// printContextLine prints one context line: "path:num-text" with a
+// multi-file prefix, "num-text" when -n is set (dash separator, no
+// highlight), or the bare text otherwise
+func printContextLine(path string, c search.ContextLine, f Formatter, opts search.Options, multipleFiles bool) {
+	if multipleFiles {
+		fmt.Printf("%s%s", Magenta(path), Magenta("-"))
+	}
+	if opts.ShowLineNumbers {
+		fmt.Printf("%s%s%s\n", f.LineNum(c.Number), f.Sep("-"), c.Text)
+	} else {
+		fmt.Println(c.Text)
+	}
+}
+
+// printMatchLine prints one match line (highlighted, colon separator)
+// with the multi-file path prefix
+func printMatchLine(path string, m search.Match, re *regexp.Regexp, f Formatter, opts search.Options, multipleFiles bool) {
+	if multipleFiles {
+		fmt.Printf("%s%s", Magenta(path), Magenta(":"))
+	}
+	fmt.Println(FormatMatch(m, re, f, opts))
 }

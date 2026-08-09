@@ -86,8 +86,8 @@ All presentation logic — formatting, colors, output.
 - `DefaultFormatter` — pre-configured Formatter with color functions
 - `FormatMatch(m search.Match, re *regexp.Regexp, f Formatter, opts search.Options) string`
 - `GetOutput(r search.Result, opts search.Options, multipleFiles bool)`
-- `SetupColors(noColor *bool)` — color initialization
-- Exported color functions: `Magenta`, `Green`, `Red`
+- `SetupColors(when string)` — sets `color.NoColor` for `--color=auto|always|never`
+- Exported color functions: `Magenta`, `Green`, `Red`, `Cyan`
 
 ## Known Issues
 

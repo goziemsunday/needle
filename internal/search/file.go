@@ -111,6 +111,7 @@ func searchPaths(
 
 	// collect and handle results
 	var results []Result
+	var errs []error
 	for r := range resultsChan {
 		if err := r.Err; err != nil {
 			if errors.Is(err, context.Canceled) {
@@ -118,11 +119,16 @@ func searchPaths(
 				// done to prevent printing an error msg when context.Canceled occurs
 				continue
 			}
-			fmt.Fprintf(os.Stderr, "needle: %s: %v\n", r.Path, err)
+			errs = append(errs, fmt.Errorf("needle: %s: %v", r.Path, err))
 			continue
 		}
 
 		results = append(results, r.Result)
+	}
+
+	if len(errs) > 0 {
+		// partial results are still valid, the caller decides the exit status
+		return results, errors.Join(errs...)
 	}
 
 	return results, nil

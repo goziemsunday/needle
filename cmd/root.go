@@ -79,7 +79,7 @@ func Run() error {
 	if len(patterns) == 0 {
 		fmt.Fprintln(os.Stderr, "Usage: needle [OPTION]... PATTERN [FILE]...")
 		fmt.Fprintln(os.Stderr, "Try 'needle --help' for more information.")
-		return fmt.Errorf("no pattern passed")
+		return UsageError{Msg: "no pattern passed"}
 	}
 
 	// define opts from flags
@@ -107,13 +107,20 @@ func Run() error {
 		opts.AfterContext = *fullContext
 	}
 
-	// color highlighting: "auto" = only when stdout is a terminal (default),
-	// "always" = force color even when piped (e.g. `less -R`), "never" = disable.
-	// bare --color behaves as "auto" via NoOptDefVal, matching grep.
+	// validate the pattern compiles upfront
+	if _, err := search.CompilePatterns(patterns, opts); err != nil {
+		fmt.Fprintf(os.Stderr, "needle: invalid pattern: %v\n", err)
+		return UsageError{Msg: "invalid pattern"}
+	}
+
+	// color highlighting: "auto" = only when stdout is a terminal (default)
+	// "always" = force color even when piped (e.g. `less -R`), "never" = disable
+	// bare --color behaves as "auto" via NoOptDefVal
 	output.SetupColors(colorWhen)
 
-	// init variable to track discovery of a match
+	// init variables to track discovery of a match and errors
 	hasAnyMatch := false
+	anyError := false
 
 	// RECURSIVE MODE
 	if opts.RecursiveSearch {
@@ -133,7 +140,8 @@ func Run() error {
 					break
 				}
 				fmt.Fprintln(os.Stderr, err)
-				return err
+				// partial results may still be valid (per-file errors)
+				anyError = true
 			}
 
 			// match found by worker, context was cancelled
@@ -150,6 +158,15 @@ func Run() error {
 
 				output.GetOutput(result, opts, multipleFiles)
 			}
+		}
+
+		// -q and a match found, exit 0 regardless of errors
+		if opts.Quiet && hasAnyMatch {
+			return nil
+		}
+
+		if anyError {
+			return UsageError{Msg: "errors encountered during search"}
 		}
 
 		// if no file matches the pattern, exit the program with code 1
@@ -188,7 +205,11 @@ func Run() error {
 
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			return err
+			// -q with a match already found still exits 0
+			if opts.Quiet && result.HasMatch {
+				return nil
+			}
+			return UsageError{Msg: "error while reading from standard input"}
 		}
 		if !result.HasMatch {
 			return fmt.Errorf("no match found")
@@ -209,6 +230,7 @@ func Run() error {
 		result, err := search.SearchFile(ctx, p, patterns, opts)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
+			anyError = true
 			continue
 		}
 
@@ -222,6 +244,15 @@ func Run() error {
 		}
 
 		output.GetOutput(result, opts, multipleFiles)
+	}
+
+	// -q and a match found, exit 0 regardless of errors
+	if opts.Quiet && hasAnyMatch {
+		return nil
+	}
+
+	if anyError {
+		return UsageError{Msg: "errors encountered during search"}
 	}
 
 	if !hasAnyMatch {

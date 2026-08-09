@@ -150,6 +150,12 @@ func Search(
 	}, nil
 }
 
+// compiles the combined patterns into a single regexp,
+// exported so callers can validate patterns upfront
+func CompilePatterns(patterns []string, opts Options) (*regexp.Regexp, error) {
+	return compilePattern(patterns, opts)
+}
+
 func compilePattern(patterns []string, opts Options) (*regexp.Regexp, error) {
 	var compiled []string
 	for _, p := range patterns {

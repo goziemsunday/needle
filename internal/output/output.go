@@ -54,10 +54,12 @@ func FormatMatch(
 	return highlighted
 }
 
-func GetOutput(r search.Result, opts search.Options, multipleFiles bool) {
+func GetOutput(p *matchPrinter, r search.Result, opts search.Options, multipleFiles bool) {
 	if opts.Quiet {
 		return
 	}
+
+	p.Reset(r.Path, multipleFiles)
 
 	if opts.PrintFilesWithMatches {
 		if r.HasMatch {
@@ -65,12 +67,11 @@ func GetOutput(r search.Result, opts search.Options, multipleFiles bool) {
 		}
 	} else if opts.PrintCountPerFile {
 		if multipleFiles {
-			fmt.Printf("%s%s%d\n", Magenta(r.Path), Magenta(":"), r.Count)
+			fmt.Printf("%s%s%d\n", Magenta(r.Path), DefaultFormatter.Sep(":"), r.Count)
 		} else {
 			fmt.Println(r.Count)
 		}
 	} else {
-		p := NewMatchPrinter(opts, r.Path, multipleFiles)
 		for _, m := range r.Matches {
 			p.Print(m, r.RegexpPattern)
 		}
@@ -82,17 +83,36 @@ type matchPrinter struct {
 	path          string
 	multipleFiles bool
 	lastPrinted   int
-	inGroup       bool
+	inGroup       bool // a group was printed in the current file
+	prevGroup     bool // a group was printed in an earlier file
 }
 
 func NewMatchPrinter(opts search.Options, path string, multipleFiles bool) *matchPrinter {
 	return &matchPrinter{opts: opts, path: path, multipleFiles: multipleFiles}
 }
 
+// Reset prepares the printer for a new file's results. A group printed in
+// any earlier file is remembered so the next file's first group receives
+// the separator.
+func (p *matchPrinter) Reset(path string, multipleFiles bool) {
+	if p.inGroup {
+		p.prevGroup = true
+	}
+	p.path = path
+	p.multipleFiles = multipleFiles
+	p.inGroup = false
+	p.lastPrinted = 0
+}
+
 func (p *matchPrinter) Print(m search.Match, re *regexp.Regexp) {
 	// separator decision
-	if p.inGroup && (p.opts.BeforeContext > 0 || p.opts.AfterContext > 0) {
-		if m.LineNumber-len(m.Before) > p.lastPrinted+1 && p.opts.GroupSeparator != "" {
+	contextOn := p.opts.BeforeContext > 0 || p.opts.AfterContext > 0
+	if contextOn {
+		if !p.inGroup && p.prevGroup {
+			// first group of a new file after a group was printed earlier
+			fmt.Println(DefaultFormatter.Sep(p.opts.GroupSeparator))
+		} else if p.inGroup && m.LineNumber-len(m.Before) > p.lastPrinted+1 {
+			// gap within this file
 			fmt.Println(DefaultFormatter.Sep(p.opts.GroupSeparator))
 		}
 	}
@@ -128,7 +148,7 @@ func (p *matchPrinter) PrintContextLine(c search.ContextLine) {
 // highlight), or the bare text otherwise
 func printContextLine(path string, c search.ContextLine, f Formatter, opts search.Options, multipleFiles bool) {
 	if multipleFiles {
-		fmt.Printf("%s%s", Magenta(path), Magenta("-"))
+		fmt.Printf("%s%s", Magenta(path), f.Sep("-"))
 	}
 	if opts.ShowLineNumbers {
 		fmt.Printf("%s%s%s\n", f.LineNum(c.Number), f.Sep("-"), c.Text)
@@ -141,7 +161,7 @@ func printContextLine(path string, c search.ContextLine, f Formatter, opts searc
 // with the multi-file path prefix
 func printMatchLine(path string, m search.Match, re *regexp.Regexp, f Formatter, opts search.Options, multipleFiles bool) {
 	if multipleFiles {
-		fmt.Printf("%s%s", Magenta(path), Magenta(":"))
+		fmt.Printf("%s%s", Magenta(path), f.Sep(":"))
 	}
 	fmt.Println(FormatMatch(m, re, f, opts))
 }

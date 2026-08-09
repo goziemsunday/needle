@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 )
 
@@ -217,7 +218,18 @@ func SearchDir(
 		}
 
 		if !d.IsDir() {
-			paths = append(paths, path)
+			// preserve the root argument as-is (eg. "./cmd" stays "./cmd/...")
+			// but strip trailing "/"
+			rel, err := filepath.Rel(root, path)
+			if err != nil {
+				return err
+			}
+			if rel == "." {
+				// root is the file itself: use the argument as given
+				paths = append(paths, root)
+			} else {
+				paths = append(paths, strings.TrimRight(root, "/")+"/"+rel)
+			}
 		}
 
 		return nil

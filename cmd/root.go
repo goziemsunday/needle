@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strings"
 
 	"github.com/goziemsunday/needle/internal/output"
 	"github.com/goziemsunday/needle/internal/search"
@@ -55,11 +56,21 @@ func Run() error {
 	pflag.Parse()
 
 	// validate colorWhen
-	whenColor := colorWhen
-	if whenColor != "auto" && whenColor != "always" && whenColor != "never" {
-		fmt.Fprintf(os.Stderr, "needle: invalid argument %q for '--color'; valid values are 'always', 'never', or 'auto'\n", whenColor)
-		fmt.Fprintln(os.Stderr, "Usage: needle [OPTION]... PATTERN [FILE]...")
-		return UsageError{Msg: "invalid argument for --color"}
+	// (yes = always, no = never, tty = auto) and exits 0 with the
+	// full usage printed on stdout for any other value
+	whenColor := strings.ToLower(colorWhen)
+	switch whenColor {
+	case "always", "yes":
+		whenColor = "always"
+	case "never", "no":
+		whenColor = "never"
+	case "auto", "tty":
+		whenColor = "auto"
+	default:
+		pflag.CommandLine.SetOutput(os.Stdout)
+		fmt.Fprintf(os.Stdout, "Usage of %s:\n", os.Args[0])
+		pflag.CommandLine.PrintDefaults()
+		return nil
 	}
 
 	// get patterns and paths, if given
@@ -74,6 +85,13 @@ func Run() error {
 		paths = pflag.Args()[1:]
 	}
 	patterns = append(patterns, extraPatterns...)
+
+	// split patterns on newlines
+	var splitPatterns []string
+	for _, p := range patterns {
+		splitPatterns = append(splitPatterns, strings.Split(p, "\n")...)
+	}
+	patterns = splitPatterns
 
 	// show usage & help message if no pattern is passed
 	if len(patterns) == 0 {
@@ -116,7 +134,7 @@ func Run() error {
 	// color highlighting: "auto" = only when stdout is a terminal (default)
 	// "always" = force color even when piped (e.g. `less -R`), "never" = disable
 	// bare --color behaves as "auto" via NoOptDefVal
-	output.SetupColors(colorWhen)
+	output.SetupColors(whenColor)
 
 	// init variables to track discovery of a match and errors
 	hasAnyMatch := false
@@ -130,6 +148,16 @@ func Run() error {
 		} else {
 			roots = paths
 		}
+
+		multipleFiles := len(paths) > 1
+		for _, root := range roots {
+			if fi, err := os.Stat(root); err == nil && fi.IsDir() {
+				multipleFiles = true
+				break
+			}
+		}
+
+		printer := output.NewMatchPrinter(opts, "", false)
 
 		for _, root := range roots {
 			results, err := search.SearchDir(ctx, cancel, root, patterns, opts)
@@ -150,13 +178,12 @@ func Run() error {
 				break
 			}
 
-			multipleFiles := len(results) > 1
 			for _, result := range results {
 				if result.HasMatch {
 					hasAnyMatch = true
 				}
 
-				output.GetOutput(result, opts, multipleFiles)
+				output.GetOutput(printer, result, opts, multipleFiles)
 			}
 		}
 
@@ -225,6 +252,7 @@ func Run() error {
 
 	// FILE MODE
 	multipleFiles := len(paths) > 1
+	printer := output.NewMatchPrinter(opts, "", false)
 
 	for _, p := range paths {
 		result, err := search.SearchFile(ctx, p, patterns, opts)
@@ -243,7 +271,7 @@ func Run() error {
 			break
 		}
 
-		output.GetOutput(result, opts, multipleFiles)
+		output.GetOutput(printer, result, opts, multipleFiles)
 	}
 
 	// -q and a match found, exit 0 regardless of errors

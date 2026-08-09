@@ -242,6 +242,11 @@ func Run() error {
 			return fmt.Errorf("no match found")
 		}
 
+		// -l was handled inline; -c prints a plain count
+		if result.IsBinary && !opts.PrintFilesWithMatches && !opts.PrintCountPerFile && !opts.Quiet {
+			fmt.Fprintln(os.Stderr, "needle: (standard input): binary file matches")
+		}
+
 		// handle -c after all input is read
 		if opts.PrintCountPerFile && !opts.PrintFilesWithMatches && !opts.Quiet {
 			fmt.Println(result.Count)

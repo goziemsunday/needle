@@ -2,6 +2,7 @@ package search
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -23,9 +24,25 @@ func SearchStdin(
 		return Result{}, fmt.Errorf("invalid pattern: %w", err)
 	}
 
-	scanner := bufio.NewScanner(os.Stdin)
+	// peek the first 512 bytes to detect binary (NUL byte) input; grep
+	// suppresses per-line output for binary input, so the line-printing
+	// callbacks are skipped while the scan keeps running for counts
+	bufReader := bufio.NewReader(os.Stdin)
+	// Read consumes the first chunk and it is re-fed below, so no bytes
+	// are lost or doubled
+	buf := make([]byte, 512)
+	n, _ := bufReader.Read(buf)
+	binaryHead := buf[:n]
+	isBinary := bytes.IndexByte(binaryHead, 0) != -1
+
+	scanner := bufio.NewScanner(io.MultiReader(bytes.NewReader(binaryHead), bufReader))
+	// raise the 64KB scanner cap
+	scanner.Buffer(make([]byte, 64*1024), 1<<30)
 	lineNumber := 0
 	var matches []Match
+
+	// binary input: skip line printing unless -l/-c/-q
+	suppress := isBinary && !opts.PrintFilesWithMatches && !opts.PrintCountPerFile && !opts.Quiet
 
 	ring := newLineRing(opts.BeforeContext + 1)
 	afterRemaining := 0
@@ -57,7 +74,7 @@ func SearchStdin(
 			}
 
 			// if the callback returns false, break the loop
-			if !onMatch(m, re) {
+			if !suppress && !onMatch(m, re) {
 				break
 			}
 
@@ -67,7 +84,7 @@ func SearchStdin(
 			ctxLine := ContextLine{Number: lineNumber, Text: line}
 			last.After = append(last.After, ctxLine)
 			afterRemaining--
-			if !onContextLine(ctxLine) {
+			if !suppress && !onContextLine(ctxLine) {
 				break
 			}
 		}
@@ -77,6 +94,7 @@ func SearchStdin(
 		Matches:       matches,
 		Count:         len(matches),
 		HasMatch:      len(matches) > 0,
+		IsBinary:      isBinary,
 		RegexpPattern: re,
 		Patterns:      patterns,
 	}, scanner.Err()
@@ -96,6 +114,8 @@ func Search(
 	}
 
 	scanner := bufio.NewScanner(r)
+	// raise the 64KB scanner cap
+	scanner.Buffer(make([]byte, 64*1024), 1<<30)
 	lineNumber := 0
 	var matches []Match
 

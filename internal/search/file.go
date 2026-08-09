@@ -66,15 +66,17 @@ func SearchFile(
 		return Result{}, err
 	}
 
-	// if binary file, return empty result quietly
-	if bytes.IndexByte(buf[:n], 0) != -1 {
-		return Result{}, nil
-	}
+	// NUL byte in the first chunk marks the file as binary; the file is
+	// still scanned (exit status follows the match) but the caller
+	// suppresses per-line output
+	isBinary := bytes.IndexByte(buf[:n], 0) != -1
 
 	// stitch the already-read bytes with the rest of the file
 	r := io.MultiReader(bytes.NewReader(buf[:n]), file)
 
-	return Search(ctx, r, path, patterns, opts)
+	result, err := Search(ctx, r, path, patterns, opts)
+	result.IsBinary = isBinary
+	return result, err
 }
 
 func searchPaths(

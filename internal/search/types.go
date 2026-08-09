@@ -37,6 +37,7 @@ type Result struct {
 	Matches       []Match
 	Count         int
 	HasMatch      bool
+	IsBinary      bool
 	RegexpPattern *regexp.Regexp
 	Patterns      []string
 }

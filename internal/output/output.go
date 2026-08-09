@@ -71,6 +71,13 @@ func GetOutput(p *matchPrinter, r search.Result, opts search.Options, multipleFi
 		} else {
 			fmt.Println(r.Count)
 		}
+	} else if r.IsBinary && r.HasMatch {
+		// suppress per-line output for binaries and report the match on stderr instead
+		name := r.Path
+		if name == "" {
+			name = "(standard input)"
+		}
+		fmt.Fprintf(os.Stderr, "needle: %s: binary file matches\n", name)
 	} else {
 		for _, m := range r.Matches {
 			p.Print(m, r.RegexpPattern)
